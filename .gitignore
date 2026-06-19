@@ -216,3 +216,36 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# === Project-specific ===
+
+# Data layers 
+data/bronze/
+data/silver/
+data/gold/
+*.duckdb
+*.duckdb.wal
+
+# Keep small samples for documentation
+!data/samples/
+
+# Secrets
+.env
+.env.local
+*.key
+
+# Notebooks checkpoints
+.ipynb_checkpoints/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# dbt
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+
+# IDE
+.vscode/
+.idea/
