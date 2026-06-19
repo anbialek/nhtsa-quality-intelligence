@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Date:** 2026-06-19
-**Deciders:** [Twoje imię]
+**Deciders:** Anna Bialek
 
 ## Context
 
