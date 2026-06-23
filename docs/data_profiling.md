@@ -64,27 +64,21 @@ Despite NHTSA being a US federal source, `ReportReceivedDate` uses European form
 
 **Action:** the Silver layer must parse as DD/MM/YYYY. dbt test implementation is required: first 2 chars of `NHTSACampaignNumber` should match year extracted from `ReportReceivedDate`.
 
-### 4. Hierarchical structure: Campaign → Action
-**Hypothesis:** Each recall has two identifiers reflecting a parent-child relationship:
-- `NHTSACampaignNumber` — campaign-level identifier (the underlying defect / business event)
-- `NHTSAActionNumber` — action-level identifier (one per affected model within the campaign)
-**Example:** Query `make=volkswagen&model=golf&modelYear=2019` returned a recall with `Model: "GOLF"` but Summary mentioned *"2019 Jetta GLI, Golf Alltrack, and Golf GTI"*.
+### 4. Hierarchical structure: Campaign → Action - verified
+**Verified:** A single `NHTSACampaignNumber` (campaign) can affect multiple models. The API returns one record per affected model when queried — campaign-level data (Manufacturer, Component, Summary, Consequence, Remedy, ReportReceivedDate, severity flags) is **identical across these records**; only `Model` field varies, echoing the query.
 
-When querying `recallsByVehicle?make=volkswagen&model=golf`, the API returns rows matching the queried model — full list of affected models is *not* in the response, only in the free-text `Summary`.
+**Example:** Campaign `22V815000` (Volkswagen tire pressure system) returns identical records for queries of Jetta, Golf Alltrack, and GTI — all with the same Summary mentioning all three models.
 
-**Verification plan:**
-- Take a known multi-model campaign (`Summary` mentions multiple models)
-- Query API for each mentioned model separately
-- Confirm same `NHTSACampaignNumber` appears with different `NHTSAActionNumber` values
+**NHTSAActionNumber — likely a NHTSA Investigation reference (verified separately)**
 
-**Implication for the Silver/Gold layer:**
-- **Two fact tables** with different grain:
-  - `fact_recall_campaign` — grain: one row per `NHTSACampaignNumber` (campaign-level analysis: total campaigns, severity, year trends)
-  - `fact_recall_action` — grain: one row per `NHTSAActionNumber` (model-level analysis: which models most affected)
-- `Summary` remains in the Silver layer as descriptive text, not used for JOINs
+The `NHTSAActionNumber` field is **optional** — not always present. When existing, observed values use prefixes like `RQ23007` (RQ = "Recall Query" / Investigation), suggesting this is a link to a prior NHTSA investigation that led to the recall, not an action-per-model identifier as initially hypothesized.
+
+**Implication for gold layer modeling:** Star schema with single fact table - `fact_recall`.
+
+Campaign-level analyses use `COUNT(DISTINCT NHTSACampaignNumber)`, and model-level analyses use `COUNT(*)` from fact table.
 
 ### 5. Sampling bias — US-market exposure
-Recall counts are biased toward US-popular vehicles based on a sample). Cross-OEM benchmarking requires normalization by US market fleet size; denominator data is required (source TBD).
+Recall counts are biased toward US-popular vehicles (based on a sample). Cross-OEM benchmarking requires normalization by US market fleet size; denominator data is required (source TBD).
 
 ### 6. Null handling — TBD on systematic sampling
 No missing values observed in small sample, but:
