@@ -56,13 +56,17 @@ Some recalls were issued **11+ years** after the vehicle's production year. This
 - The Silver layer should include `years_in_service_at_recall` metric.
 
 ### 3. Date format verification — DD/MM/YYYY confirmed
-Despite NHTSA being a US federal source, `ReportReceivedDate` uses European format **DD/MM/YYYY**, not US `MM/DD/YYYY`.
+Cross-field validation across 323 records from 49 different manufacturer x model x production year combinations:
+- First component range: **1-31** → confirms format is DD/MM/YYYY
+- Middle component range: **1-12** → confirms format is DD/MM/YYYY
+- Year cross-check: 322 / 323 records (99.7%) had `NHTSACampaignNumber` prefix matching `ReportReceivedDate` year
 
-**Verified via cross-field validation:**
-- `NHTSACampaignNumber` prefix encodes year (e.g. `"15V234000"` = 2015)
-- Cross-checked: `ReportReceivedDate`: "30/09/2015" matches year `15` → format is `30 September 2015` (DD/MM/YYYY)
+**One mismatch identified:** `NHTSACampaignNumber: 20V675000` with `ReportReceivedDate: 12/03/2021`. Likely a recall amendment (campaign opened in 2020, date updated when scope expanded in 2021). **To be verified by inspecting Remedy/Summary text for "expands" / "amendment" keywords.**
 
-**Action:** the Silver layer must parse as DD/MM/YYYY. dbt test implementation is required: first 2 chars of `NHTSACampaignNumber` should match year extracted from `ReportReceivedDate`.
+**Implication for silver layer:**
+- Date parsing: `pd.to_datetime(date_str, format="%d/%m/%Y")` 
+- Cross-field test: `severity: warn` (not error) — 0.3% legitimate mismatches expected
+- Possible derived field: `is_recall_amendment` based on text patterns in Remedy/Summary
 
 ### 4. Hierarchical structure: Campaign → Action - verified
 **Verified:** A single `NHTSACampaignNumber` (campaign) can affect multiple models. The API returns one record per affected model when queried — campaign-level data (Manufacturer, Component, Summary, Consequence, Remedy, ReportReceivedDate, severity flags) is **identical across these records**; only `Model` field varies, echoing the query.
