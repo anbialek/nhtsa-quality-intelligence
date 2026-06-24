@@ -2,12 +2,15 @@
 
 > **Update Log:**
 > - 2026-06-22 — Initial exploration (Recall API only, ~50 sample records)
+> - 2026-06-23 — Campaign/Action hierarchy verification; data model revision (single fact + dimensions); DD/MM/YYYY date format confirmation on 323-record sample
+> - 2026-06-24 — Missing values verification using bigger sample, lack of hard cap confirmation
+
 
 Document captures observations about the structure, quality, and patterns of the NHTSA Recall API. Findings shape transformation decisions in the silver and gold layers.
 
 **Endpoint covered:** `https://api.nhtsa.gov/recalls/recallsByVehicle`
 
-**Status:** Initial exploration phase. This will be expanded through systematic sampling in the next step.
+**Status:** Systematic exploration phase.
 
 ---
 
@@ -22,7 +25,7 @@ Document captures observations about the structure, quality, and patterns of the
 
 ### Identification fields
 - `NHTSACampaignNumber` — recall campaign identifier; prefix indicates year (e.g. `"15V..."` = 2015)
-- `NHTSAActionNumber` — likely a sub-identifier within a campaign (TBD: confirm `1 campaign : N actions` hypothesis)
+- `NHTSAActionNumber` — likely references a NHTSA Investigation (`RQ`-prefixed) that led to the recall
 - `Manufacturer` — full legal name of the **entity issuing the recall** — may be OEM, Tier-1 supplier, or component supplier (see Manufacturer Ambiguity below)
 
 ### Defect description
@@ -30,7 +33,7 @@ Document captures observations about the structure, quality, and patterns of the
 - `Summary` — free-text description; may indicate multiple affected models and production years
 - `Consequence` — free-text safety implication
 - `Remedy` — free-text repair description
-- `Notes` — additional context information
+- `Notes` — additional non-mandatory context information
 
 ### Severity flags
 - `parkIt` (boolean) — vehicle should not be driven at all (user safety risk - the highest severity)
@@ -56,14 +59,14 @@ Some recalls were issued **11+ years** after the vehicle's production year. This
 - The Silver layer should include `years_in_service_at_recall` metric.
 
 ### 3. Date format verification — DD/MM/YYYY confirmed
-Cross-field validation across 323 records from 49 different manufacturer x model x production year combinations:
+Cross-field validation across 323 records from 49 different make x model x year combinations:
 - First component range: **1-31** → confirms format is DD/MM/YYYY
 - Middle component range: **1-12** → confirms format is DD/MM/YYYY
 - Year cross-check: 322 / 323 records (99.7%) had `NHTSACampaignNumber` prefix matching `ReportReceivedDate` year
 
 **One mismatch identified:** `NHTSACampaignNumber: 20V675000` with `ReportReceivedDate: 12/03/2021`. Likely a recall amendment (campaign opened in 2020, date updated when scope expanded in 2021). **To be verified by inspecting Remedy/Summary text for "expands" / "amendment" keywords.**
 
-**Implication for silver layer:**
+**Implication for the Silver layer:**
 - Date parsing: `pd.to_datetime(date_str, format="%d/%m/%Y")` 
 - Cross-field test: `severity: warn` (not error) — 0.3% legitimate mismatches expected
 - Possible derived field: `is_recall_amendment` based on text patterns in Remedy/Summary
@@ -84,20 +87,19 @@ Campaign-level analyses use `COUNT(DISTINCT NHTSACampaignNumber)`, and model-lev
 ### 5. Sampling bias — US-market exposure
 Recall counts are biased toward US-popular vehicles (based on a sample). Cross-OEM benchmarking requires normalization by US market fleet size; denominator data is required (source TBD).
 
-### 6. Null handling — TBD on systematic sampling
-No missing values observed in small sample, but:
-- Sample size insufficient (~3-20 records per query)
-- Empty strings / placeholder values may exist
+### 6. Null handling — verified
+**Verified:** Missing values are present in the 323-record sample at varying rates per field. 
+`NHTSAActionNumber` is missing in ~92.26% of records — confirming earlier observation that this field is optional. Its semantic role (likely a reference to prior NHTSA Investigation, based on observed RQ-prefixed values) requires NHTSA documentation verification. 
+`Notes` is missing in ~12.38% which indicates a non-mandatory additional information.
+Severity flags: `parkIt`, `parkOutSide`, and `overTheAirUpdate` show identical null rates with missing values **in the same records**.
 
-**Hard constraints — `not_null` test, severity: error**
-Records missing these fields are unusable and should fail the pipeline:
-- `NHTSACampaignNumber` — primary business key (deduplication, joins)
-- `NHTSAActionNumber` — natural key at action grain  
-- `Manufacturer` — no analysis is meaningful without knowing the issuing entity
-- `ReportReceivedDate` — required for all time-trend analyses
+**Critical fields:** No missing values observed for `NHTSACampaignNumber`, `Manufacturer`, `Make`, `Model`, `ModelYear`, `ReportReceivedDate`, `Component`, `Summary`, `Consequence`, `Remedy`. These align with the **hard constraint** classification proposed in earlier profiling.
 
-**Soft constraints — `not_null` test, severity: warning**
-Records missing these fields are loaded but flagged for review. Null can be legitimate (e.g. fleet-wide recalls without specific model), but a null rate above threshold should trigger inspection
+**Architectural implication:** 
+- Silver layer must enforce `not_null` tests for fields confirmed as 100% complete (campaign key, manufacturer, model, dates, narrative fields).
+- `NHTSAActionNumber` to be loaded as nullable; only non-null values are used to populate `dim_investigation` (per earlier model decision).
+- Records with null `parkIt`, `parkOutSide`, and `overTheAirUpdate` need further investigation — if confirmed coincident, may indicate older recall records pre-dating the introduction of these severity classifications by NHTSA. Worth checking the date distribution of records with missing severity flags.
+- All severity-flag null records to be flagged with a derived column `has_complete_severity_classification` (boolean) for downstream filtering of severity-weighted analyses.
 
 ### 7. Severity flags — distribution unknown
 
@@ -107,9 +109,9 @@ All sampled records had a flag `false` in `parkIt`, `parkOutSide`, and `overTheA
 
 ## Next Steps - Questions
 
-1. Confirm hierarchy: does one `NHTSACampaignNumber` contain multiple `NHTSAActionNumber`?
-2. Test for hard cap on records per query (try higher-recall scenarios)
+1. Confirm hierarchy: does one `NHTSACampaignNumber` contain multiple `NHTSAActionNumber`? - verified
+2. Test for hard cap on records per query (try higher-recall scenarios) - verified
 3. Get a record with at least one severity flag = `true` to understand its semantic
-4. Sample ~200 records across diverse manufacturers to compute null rates per field
+4. Sample ~200 records across diverse manufacturers to compute null rates per field - verified
 5. Find or document an authoritative NHTSA API field glossary
 6. Explore Complaints API (VOQ) — needed for complaint-to-recall lag metric
