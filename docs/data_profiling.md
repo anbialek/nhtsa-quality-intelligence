@@ -3,7 +3,7 @@
 > **Update Log:**
 > - 2026-06-22 — Initial exploration (Recall API only, ~50 sample records)
 > - 2026-06-23 — Campaign/Action hierarchy verification; data model revision (single fact + dimensions); DD/MM/YYYY date format confirmation on 323-record sample
-> - 2026-06-24 — Missing values verification using bigger sample, lack of hard cap confirmation
+> - 2026-06-24 — Missing values verification using bigger sample, lack of hard cap confirmation, Complaints API Initial exploration
 
 
 Document captures observations about the structure, quality, and patterns of the NHTSA Recall API. Findings shape transformation decisions in the silver and gold layers.
@@ -115,3 +115,102 @@ All sampled records had a flag `false` in `parkIt`, `parkOutSide`, and `overTheA
 4. Sample ~200 records across diverse manufacturers to compute null rates per field - verified
 5. Find or document an authoritative NHTSA API field glossary
 6. Explore Complaints API (VOQ) — needed for complaint-to-recall lag metric
+
+---
+
+# Data Profiling: NHTSA Complaints API
+
+**Endpoint:** `https://api.nhtsa.gov/complaints/complaintsByVehicle`
+
+**Status:** Initial exploration phase.
+
+## Response Structure
+- Top-level keys: `Count`, `Message`, `results` (matches Recalls)
+- **Records are nested:** each result contains a `products` list (1+ products affected per complaint)
+- Volume vastly higher than Recalls (e.g., Honda Accord 2018: ~1767 complaints vs ~6 recalls)
+
+## Field Glossary
+
+### Identification
+- `odiNumber` — unique complaint ID (analogous to NHTSACampaignNumber)
+- `vin` — affected vehicle VIN (absent in Recalls — Complaints reported by an individual vehicle, Recalls - by a campaign, so group of vehicles)
+- `manufacturer` — OEM (suppliers do not appear, unlike Recalls)
+
+### Severity flags (critical for quality scoring)
+- `crash` (boolean)
+- `fire` (boolean)  
+- `numberOfInjuries` (integer)
+- `numberOfDeaths` (integer)
+
+### Dates — **FORMAT DIFFERS FROM RECALLS** !!!
+- `dateOfIncident` — **MM/DD/YYYY** (US format, opposite to Recalls' DD/MM/YYYY)
+- `dateComplaintFiled` — **MM/DD/YYYY**
+- Observed lag between incident and filing: 0 to even more than 6 months — metric worth tracking to investigate the delay
+
+### Components
+- `components` — affected components (free text, taxonomy similar to Recalls but verify alignment for cross-source JOINs)
+
+### Nested products
+- `products` — list of (type, productYear, productMake, productModel, manufacturer)
+
+### Narrative
+- `summary` — free-text user description; high variability, NLP would be required for systematic categorization
+
+---
+
+## Data Quality Observations
+
+### 1. Date format inconsistency between Recalls and Complaints !
+Recalls API uses European data formatting (DD/MM/YYYY); where Complaints API uses American one (MM/DD/YYYY). 
+**Each endpoint must be parsed with its own format spec in the Silver layer.**
+
+### 2. VIN normalization needed
+Observed mixed case (`"1HGCV1F19JA"` vs `"1hgcv1f49ja"`). 
+- NHTSA Complaints API returns **partial VIN — first 11 characters only**, without the serial number (positions 12-17) due to personal data security.
+- The partial VIN still contains:
+  - WMI (position 1-3): manufacturer identifier
+  - VDS (position 4-8): vehicle descriptor (model/engine/body)
+  - Check digit (position 9)
+  - Model year (position 10)
+  - Plant code (position 11)
+- Silver layer: standardize to uppercase, validate **11-character length**, validate alphanumeric only.
+- **Important**: identical 11-character VINs across multiple complaints do NOT indicate the same physical vehicle — they indicate the same manufacturer, model, year, and plant of production.
+
+### 3. Nested products require flattening
+Based on 10 (make × model × year) combinations: complaints with `len(products) > 1` exist:
+- `Vehicle + Tire` (most common multi-product pattern)
+- `Vehicle + Child Seat`  
+- `Vehicle + Equipment`
+- `2 × Vehicle` (multi-vehicle complaints)
+
+**Conclusion:** `products` is not a single-element wrapper.
+As the platform should focus on OEM production and filter `products` to `type = "Vehicle"` before linking to the complaint fact table, so:
+- Project's business questions target automotive OEM quality intelligence
+- Tire, Child Seat, and Equipment categories are not included (separate NHTSA regulatory tracks)
+
+**Out-of-scope consequence:** complaints that are *primarily* about tires/child seats/equipment (where Vehicle is incidental context) will still appear as Vehicle-tagged complaints, but the actual root cause won't be tracked which is acceptable for project scope.
+
+**Revisit condition:** if future analysis benefits from tire/equipment-level quality tracking, extend the Silver layer with bridge table.
+
+### 4. Higher volume than Recalls
+Complaints can exceed even more than 1000 per (make × model × year) combination. Bronze ingestion may require **partial paginatation handling** — to be verified (does Complaints API have a hard cap?).
+
+## Cross-source Observations
+
+### Component nomenclature alignment — TBD
+Both endpoints use free-text `Component` / `components`. Need to compare distinct values across both sources to assess JOIN feasibility. Likely requires fuzzy matching or controlled vocabulary mapping in the Silver layer.
+
+### Manufacturer scope
+- Recalls: includes OEMs **and** suppliers (Tenneco, etc.)
+- Complaints: only OEMs (consumer perspective — user doesn't know suppliers)
+- Implication: cross-source JOIN should filter Recalls to OEM-only when matching with Complaints
+
+### Key metric enabled by combining sources
+**Complaint-to-recall lag:** for each recall, count and time-distribute prior complaints on the same (make, model, year, component) — measures responsiveness of manufacturer to field signals.
+
+## Hypotheses for Systematic Verification
+
+1. **Pagination / hard cap on Complaints API** — given 1000+ records observed, suspect API may paginate
+2. **VIN duplication patterns** — how concentrated are complaints across partial vin? Are some partial vin (same WMI+VDS+year+plant) reported more often than others?
+3. **Component nomenclature alignment** — are Recalls and Complaints `Component` values mappable?
+4. **Severity field distributions** — fraction of complaints with crash/fire/injuries/deaths > 0
