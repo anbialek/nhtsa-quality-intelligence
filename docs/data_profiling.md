@@ -4,7 +4,7 @@
 > - 2026-06-22 — Initial exploration (Recall API only, ~50 sample records)
 > - 2026-06-23 — Campaign/Action hierarchy verification; data model revision (single fact + dimensions); DD/MM/YYYY date format confirmation on 323-record sample
 > - 2026-06-24 — Missing values verification using bigger sample, lack of hard cap confirmation, Complaints API Initial exploration
-
+> - 2026-06-25 — Complete Complaints API systematic exploration; add cohort concentration analysis
 
 ---
 
