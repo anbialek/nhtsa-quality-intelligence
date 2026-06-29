@@ -226,6 +226,9 @@ data/gold/
 *.duckdb
 *.duckdb.wal
 
+# Logs
+logs/
+
 # Keep small samples for documentation
 !data/samples/
 
