@@ -5,12 +5,13 @@
 > - 2026-06-23 — Campaign/Action hierarchy verification; data model revision (single fact + dimensions); DD/MM/YYYY date format confirmation on 323-record sample
 > - 2026-06-24 — Missing values verification using bigger sample, lack of hard cap confirmation, Complaints API Initial exploration
 > - 2026-06-25 — Complete Complaints API systematic exploration; add cohort concentration analysis
-
+> - 2026-06-30 - Implement Recalls ingestion into the Bronze layer
+> - 2026-07-01 - Implement Complaints ingestion into the Bronze layer, documented API response statistics and metadata enrichment observations
 ---
 
 Document captures observations about the structure, quality, and patterns of the NHTSA Recall API. Findings shape transformation decisions in the silver and gold layers.
 
-**Endpoint covered:** `https://api.nhtsa.gov/recalls/recallsByVehicle`
+**Endpoint:** `https://api.nhtsa.gov/recalls/recallsByVehicle`
 
 **Status:** Systematic exploration phase.
 
@@ -213,7 +214,26 @@ Both endpoints use free-text `Component` / `components`. Need to compare distinc
 
 ## Hypotheses for Systematic Verification
 
-1. **Pagination / hard cap on Complaints API** — given 1000+ records observed, suspect API may paginate
-2. **VIN duplication patterns** — how concentrated are complaints across partial vin? Are some partial vin (same WMI+VDS+year+plant) reported more often than others?
+1. **Pagination / hard cap on Complaints API** — given 1000+ records observed, suspect API may paginate - verified
+2. **VIN duplication patterns** — how concentrated are complaints across partial vin? Are some partial vin (same WMI+VDS+year+plant) reported more often than others? - verified
 3. **Component nomenclature alignment** — are `Recalls` and `Complaints` `Component` values possible to map?
 4. **Severity field distributions** — fraction of complaints with crash/fire/injuries/deaths > 0
+
+## Ingestion Observations (Bronze Layer)
+
+First production ingestion of `Recalls` and `Complaints` runs completed. Some observations for the Silver layer design:
+
+### API response statistics for 54 (make x model x year) combinations
+- **Recalls endpoint**: 45 successful, 9 failed queries; 311 records total, ~150 KB payload
+- **Complaints endpoint**: 35 successful, 19 failed queries; 8552 records total, ~11 MB payload
+- Failed queries primarily due to HTTP 400 for (make x model x year) combinations without recalls and/or complaints, especially the newest ones
+- Failure pattern is data-driven (missing combinations), not infrastructure issues
+
+### Ingestion metadata added per record
+All bronze records include four `_`-prefixed metadata fields:
+- `_source_url`, `_query_params`, `_response_status`, `_ingested_at`
+
+This enables traceability of every ingested record.
+
+### Vehicle-only scope — implementation layer
+The Vehicle-only filter will be included in the Silver layer, not the Bronze one, which preserves all raw complaints (including all product types) to maintain snapshot fidelity and enable future scope expansions without re-ingestion. The Silver layer applies the filter before analytics-ready modeling.
