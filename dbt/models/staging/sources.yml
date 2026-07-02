@@ -1,0 +1,39 @@
+version: 2
+
+sources:
+  - name: bronze
+    description: "Raw data ingested from NHTSA APIs (JSONL format, Hive-partitioned by ingest_date)."
+    meta:
+      external_location: "read_json_auto('../data/bronze/{name}/**/*.jsonl', union_by_name=true)"
+    tables:
+      - name: recalls
+        description: "Raw recall records from NHTSA Recall API"
+        columns:
+          - name: NHTSACampaignNumber
+            description: "Unique campaign identifier"
+          - name: Manufacturer
+            description: "Entity issuing the recall (OEM or supplier)"
+          - name: Component
+            description: "Affected vehicle component"
+          - name: ReportReceivedDate
+            description: "Date NHTSA received the report (DD/MM/YYYY format)"
+          - name: _ingested_at
+            description: "Ingestion timestamp (UTC, ISO 8601)"
+          - name: _source_url
+            description: "Full API URL used for ingestion"
+      
+      - name: complaints
+        description: "Raw complaint records from NHTSA Complaints API"
+        columns:
+          - name: odiNumber
+            description: "Unique complaint identifier"
+          - name: manufacturer
+            description: "OEM manufacturer (consumer-reported)"
+          - name: dateOfIncident
+            description: "Date of incident (MM/DD/YYYY format)"
+          - name: dateComplaintFiled
+            description: "Date complaint was filed (MM/DD/YYYY format)"
+          - name: vin
+            description: "Partial VIN, 11 chars (positions 1-11)"
+          - name: _ingested_at
+            description: "Ingestion timestamp (UTC, ISO 8601)"

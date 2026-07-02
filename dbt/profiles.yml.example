@@ -1,0 +1,10 @@
+# profiles.yml.example: copy this file to profiles.yml and fill in the path.
+# profiles.yml is not commited to the repository.
+
+nhtsa_quality_intelligence:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: #for example: ../data/warehouse.duckdb  (relative to dbt/ folder)
+      threads: 4
