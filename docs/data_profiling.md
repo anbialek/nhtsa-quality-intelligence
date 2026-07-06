@@ -7,6 +7,7 @@
 > - 2026-06-25 — Complete Complaints API systematic exploration; add cohort concentration analysis
 > - 2026-06-30 - Implement Recalls ingestion into the Bronze layer
 > - 2026-07-01 - Implement Complaints ingestion into the Bronze layer, documented API response statistics and metadata enrichment observations
+> - 2026-07-03 - Bronze layer deduplication on snapshot
 ---
 
 Document captures observations about the structure, quality, and patterns of the NHTSA Recall API. Findings shape transformation decisions in the silver and gold layers.
@@ -237,3 +238,17 @@ This enables traceability of every ingested record.
 
 ### Vehicle-only scope — implementation layer
 The Vehicle-only filter will be included in the Silver layer, not the Bronze one, which preserves all raw complaints (including all product types) to maintain snapshot fidelity and enable future scope expansions without re-ingestion. The Silver layer applies the filter before analytics-ready modeling.
+
+### Bronze layer duplication (empirical)
+Measured on current bronze snapshot :
+
+- **Recalls**: 46.6% duplication rate. 311 raw rows containing 166 unique campaign_numbers. Due to NHTSA campaigns which often affect multiple model × year combinations.
+- **Complaints**: 0% duplication rate. 8552 rows containing 8552 unique odi_numbers. Complaints are unique per report.
+
+**Implication for silver layer:**
+- Recalls silver requires deduplication and potentially splitting campaign data from affected model data
+- In case of complaints, deduplication exists as a preventive idempotency measure, ensuring resilience to potential re-ingestion scenarios rather than solving a current data quality issue.
+
+**Testing strategy:**
+- Staging: `not_null` only on hard constraints (bronze append pattern precludes unique tests)
+- Silver: `not_null` + `unique` on primary keys (silver guarantees deduplication)
