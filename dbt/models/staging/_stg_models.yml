@@ -1,0 +1,54 @@
+version: 2
+
+models:
+  - name: stg_recalls
+    description: "Staging model: NHTSA Recalls. Renaming, type casting, minimal cleaning. Duplicates by campaign_number can be preserved (bronze append pattern); silver deduplicates."
+    columns:
+      - name: campaign_number
+        description: "NHTSA campaign identifier. Remark: same campaign appears in multiple rows if it affects multiple models (or after re-ingestion); silver deduplicates."
+        tests:
+          - not_null
+      
+      - name: manufacturer
+        description: "Entity issuing the recall (OEM or supplier)"
+        tests:
+          - not_null
+      
+      - name: report_received_date
+        description: "Date NHTSA received the report (parsed from DD/MM/YYYY)"
+        tests:
+          - not_null
+      
+      - name: make
+        tests:
+          - not_null
+      
+      - name: model
+        tests:
+          - not_null
+
+  - name: stg_complaints
+    description: "Staging model: NHTSA Complaints. Renaming, type casting, minimal cleaning. Duplicates by odi_number can be preserved (bronze append pattern); silver deduplicates."
+    columns:
+      - name: odi_number
+        description: "Office of Defects Investigation unique identifier. Uniqueness enforced in silver layer after deduplication."
+        tests:
+          - not_null
+      
+      - name: manufacturer
+        description: "OEM manufacturer (client-reported)"
+        tests:
+          - not_null
+      
+      - name: date_of_incident
+        description: "Date of incident (parsed from MM/DD/YYYY)"
+        tests:
+          - not_null
+      
+      - name: date_complaint_filed
+        description: "Date complaint was filed (parsed from MM/DD/YYYY)"
+        tests:
+          - not_null
+      
+      - name: vin
+        description: "Partial VIN, 11 chars, nullable (confirmed in data)"
