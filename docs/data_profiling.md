@@ -8,6 +8,7 @@
 > - 2026-06-30 - Implement Recalls ingestion into the Bronze layer
 > - 2026-07-01 - Implement Complaints ingestion into the Bronze layer, documented API response statistics and metadata enrichment observations
 > - 2026-07-03 - Bronze layer deduplication on snapshot
+> - 2026-07-09 - Silver layer epoch date placeholder in dateOfIncident detection and management (by NULL filling)
 ---
 
 Document captures observations about the structure, quality, and patterns of the NHTSA Recall API. Findings shape transformation decisions in the silver and gold layers.
@@ -252,3 +253,21 @@ Measured on current bronze snapshot :
 **Testing strategy:**
 - Staging: `not_null` only on hard constraints (bronze append pattern precludes unique tests)
 - Silver: `not_null` + `unique` on primary keys (silver guarantees deduplication)
+
+### Data quality - implausible dateOfIncident values
+
+During the Silver layer construction three anomaly patterns were identified in `dateOfIncident`:
+
+1. **Epoch placeholder** (`1969-12-31`): 13 records (0.15%). Classic Unix epoch-adjacent fallback, probably representing NULL in NHTSA's source system.
+
+2. **Mid-year placeholder** (`YYYY-07-01`, e.g. `2021-07-01`): Multiple records share this exact date across different products, suggesting an "only known year, so fill in July 1st" fallback pattern in NHTSA's system.
+
+3. **Implausible historical dates** (e.g. `1973-03-15` for a 2022 Tesla Model 3): Probably input human errors by customer during complaint filing — dates predating the vehicle's production year.
+
+**Validation strategy**: 
+- Epoch placeholder (`1969-12-31`) is converted to NULL in `silver_complaint`.
+- Broader implausible dates (for example, incident dates decades before the vehicle's production year) are validated via a custom dbt test that joins `silver_complaint` to `silver_complaint_product` and checks that `date_of_incident >= product_year - 1` (allowing for early production/sale before the nominal model year). Violations do not modify the data — they surface as a dbt test failure, flagging records for manual review.
+
+### Data quality - mismatch of rows silver_complaint_product and silver_complaint
+
+`silver_complaint_product` (8578 rows) exceeds `silver_complaint` (8552 rows) by 26 rows. 26 complaints were created for two vehicle products each owned by the same person. This is expected behavior — the table correctly preserves one row per (complaint × vehicle) relationship.
