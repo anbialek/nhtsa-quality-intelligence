@@ -266,7 +266,7 @@ During the Silver layer construction three anomaly patterns were identified in `
 
 **Validation strategy**: 
 - Epoch placeholder (`1969-12-31`) is converted to NULL in `silver_complaint`.
-- Broader implausible dates (for example, incident dates decades before the vehicle's production year) are validated via a custom dbt test that joins `silver_complaint` to `silver_complaint_product` and checks that `date_of_incident >= product_year - 1` (allowing for early production/sale before the nominal model year). Violations do not modify the data — they surface as a dbt test failure, flagging records for manual review.
+- Broader implausible dates (for example, incident dates decades before the vehicle's production year) are validated via a custom dbt test that joins `silver_complaint` to `silver_complaint_product` and checks that `date_of_incident >= product_year - 1` (allowing for early production/sale before the nominal model year). Violations do not modify the data — they are indicated in a dbt test warning (severity: warn), flagging **33 records** for manual review.
 
 ### Data quality - mismatch of rows silver_complaint_product and silver_complaint
 
