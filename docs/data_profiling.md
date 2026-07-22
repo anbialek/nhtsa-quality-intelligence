@@ -271,3 +271,7 @@ During the Silver layer construction three anomaly patterns were identified in `
 ### Data quality - mismatch of rows silver_complaint_product and silver_complaint
 
 `silver_complaint_product` (8578 rows) exceeds `silver_complaint` (8552 rows) by 26 rows. 26 complaints were created for two vehicle products each owned by the same person. This is expected behavior — the table correctly preserves one row per (complaint × vehicle) relationship.
+
+### dim_manufacturer — known normalization issue
+
+Some of 11 manufacuturers are represented by the multiple names (e.g., Chrysler appears as 3 variants, Toyota as 2). Issue could be solved by a manual lookup table mapping raw names to canonical names. Deferred to future scope — current MVP uses raw names as-is.
